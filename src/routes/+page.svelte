@@ -7,7 +7,6 @@ let ctx;
 
 onMount(()=> {
   const tetris = new Tetris(canvas, canvas.getContext('2d'));
-  tetris.setup();
   tetris.loop();
 })
 
