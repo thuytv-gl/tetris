@@ -1,9 +1,5 @@
-type Cell = {
-  x: number;
-  y: number;
-  fill: boolean;
-  cached: boolean;
-};
+import type { Cell } from './Tetris.types';
+import { sameTens } from './Utils';
 
 const PAD = 4;
 const CELL = 40;
@@ -38,6 +34,8 @@ const SIZE = CELL - PAD * 2;
   190 191 192 193 194 195 196 197 198 199 
  */
 
+// TODO: move all shapes up one row
+// to prevent shape stack on other shapes
 const I_SHAPE = [-26, -16, -6, 4];
 const Z_SHAPE = [-6, -5, 3, 4];
 const R_Z_SHAPE = [-7, -6, 4, 5];
@@ -45,56 +43,89 @@ const T_SHAPE = [-6, 3, 4, 5];
 const L_SHAPE = [-5, 3, 4, 5];
 const R_L_SHAPE = [-7, 3, 4, 5];
 const HEAD_POSISION = 3;
+const shapes = [
+  I_SHAPE,
+  Z_SHAPE,
+  R_Z_SHAPE,
+  T_SHAPE,
+  L_SHAPE,
+  R_L_SHAPE,
+];
+
+function randomShape() {
+  const luckyNumber = Math.floor(Math.random() * shapes.length);
+  return [...shapes[luckyNumber]];
+}
 
 export default class Tetris {
   private board: Cell[][] = [];
   private md = Math.round(Math.random() * 10);
   private blen = 0; // board len
-  private currentShape: number[] = T_SHAPE;
+  private shape: number[] = randomShape();
 
   constructor(
     private canvas: HTMLCanvasElement,
     private ctx: CanvasRenderingContext2D,
   ) {
+    this.beforeSetup();
     this.ctx.strokeStyle = 'green';
     this.ctx.fillStyle = 'green';
-    this.blen = this.setupBoard();
+
+    const rows = this.canvas.height / CELL;
+    const cols = this.canvas.width / CELL;
+
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        this.board.push({
+          x: x * CELL + PAD,
+          y: y * CELL + PAD,
+          fill: false,
+          cached: false,
+        });
+      }
+    }
+
+    this.blen = this.board.length - 1;
 
     this.listenKeyboard();
-    this.renderBoard();
+    this.afterSetup();
+    this.loop();
   }
+
+  beforeSetup(){};
+  afterSetup(){};
 
   listenKeyboard() {
-    window.addEventListener('keydown', (evt) => this.nextState(() => {
-      switch(evt.code) {
-        case 'Space': {
-          for (let i = this.currentShape.length-1; i > -1; i--) {
-            this.currentShape[i] = this.drop(this.currentShape[i]);
-          }
-          console.log(this.currentShape)
-          break;
-        }
-        default: break;
+    window.addEventListener('keydown', (evt) => {
+      const key = this.keymap[evt.code] ?? evt.code;
+      const handler = this.keydownHandlers[key];
+      if (typeof handler === 'function') {
+        handler(evt);
+        this.renderBoard();
       }
-    }))
+    })
   }
 
-  nextState(action: () => void) {
-    const prev = [...this.currentShape];
-    action();
-    const curn = this.currentShape;
-    for (const i of prev) {
-      if (!curn.includes(i)) {
-        this.setFill(i, false);
-      }
-    }
+  keymap = {
+    KeyJ: 'ArrowDown',
+    KeyK: 'ArrowUp',
+    KeyH: 'ArrowLeft',
+    KeyL: 'ArrowRight',
+  }
 
-    for (const i of curn) {
-      this.setFill(i, true);
-      if (this.shouldClearRow(i)) {
-        this.clearRow(i);
-      }
-    }
+  keydownHandlers = {
+    Space: () => {
+      while(this.moveDown());
+    },
+    ArrowDown: () => {
+      this.moveDown();
+    },
+    ArrowLeft: () => {
+      this.moveAside(-1);
+    },
+    ArrowRight: () => {
+      this.moveAside(1);
+    },
   }
 
   setFill(index: number, fill: boolean) {
@@ -105,50 +136,68 @@ export default class Tetris {
     }
   }
 
-  move(direction: 'left' | 'right' | 'up' | 'down', index: number) {
-    switch(direction) {
-      case 'left': {
-        if (this.sameTens(index, index-1)) {
-          index--
-        }
+  moveDown() {
+    let i = this.shape.length;
+    let updated = 0;
+    let prev = [...this.shape];
+
+    this.shape.forEach(id => this.setFill(id, false));
+    while (--i >= 0) {
+      const id = this.shape[i];
+      const next = id + 10;
+
+      if (sameTens(id, this.blen) || this.filled(next)) {
         break;
       }
-      case 'right': {
-        if (this.sameTens(index, index+1)) {
-          index++;
-        }
-        break;
-      }
-      case 'up': {
-        if (index - 10 > -1) {
-          index -= 10;
-        }
-        break;
-      }
-      case 'down': {
-        if (index + 10 <= this.blen) {
-          index += 10;
-        }
-        break;
-      }
-      default: break;
+
+      this.shape[i] = next;
+      updated++;
     }
 
-    return index;
+    const panic = updated !== this.shape.length;
+    const toFill = panic ? prev : [...this.shape];
+    panic && (this.shape = randomShape())
+
+    toFill.forEach((id) => this.setFill(id, true));
+
+    return !panic;
   }
 
-  drop(i: number) {
-    while(
-      !this.sameTens(i, this.blen)
-      && !this.isFillded(i + 10)
-    ) {
-      i += 10;
+  moveAside(direction: 1 | -1) {
+    let i = this.shape.length;
+    let updated = 0;
+    let prev = [...this.shape];
+
+    this.shape.forEach(id => this.setFill(id, false));
+    while (--i >= 0) {
+      const id = this.shape[i];
+      const next = id + 1 * direction;
+
+      if (!sameTens(id, next) || this.filled(next)) {
+        break;
+      }
+
+      this.shape[i] = next;
+      updated++;
     }
 
-    return i;
+    const panic = updated !== this.shape.length;
+    const toFill = panic ? prev : [...this.shape];
+
+    panic && (this.shape = prev)
+    toFill.forEach((id) => this.setFill(id, true));
+
+    return !panic;
   }
 
-  isFillded(index: number) {
+  bodyPart(id: number) {
+    return this.shape.includes(id);
+  }
+
+  drop() {
+  }
+
+  filled(index: number) {
     return !!this.board[index] && this.board[index].fill === true;
   }
 
@@ -181,45 +230,19 @@ export default class Tetris {
     }
   }
 
-  /*
-   * compare the tens of given numbers
-   * e.g: n1 = 123, n2 = 234
-   * n1 tens = 12
-   * n2 tens = 23
-   * => result false
-   */
-  sameTens(n1: number, n2: number) {
-    return Math.floor(n1/10) === Math.floor(n2/10);
+  loop() {
+    //setInterval(() => {
+      this.renderBoard();
+      this.moveDown();
+    //}, 100)
   }
 
-  setupBoard() {
-    const rows = this.canvas.height / CELL;
-    const cols = this.canvas.width / CELL;
+  renderBoard() {
+    this.iterBoard((cell, index) => {
+      this.renderCell(cell);
+    });
 
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
-        this.board.push({
-          x: x * CELL + PAD,
-          y: y * CELL + PAD,
-          fill: false,
-        });
-      }
-    }
-
-    return this.board.length - 1;
-  }
-
-  clearCanvas() {
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-  }
-
-  drawCell(cell: Cell) {
-    if (!cell.cached) {
-      this.ctx.clearRect(cell.x, cell.y, SIZE, SIZE);
-      const renderMethod = cell.fill ? this.ctx.fillRect : this.ctx.rect;
-      renderMethod.bind(this.ctx)(cell.x, cell.y, SIZE, SIZE);
-      cell.cached = true;
-    }
+    this.ctx.stroke();
   }
 
   iterBoard(callback: (cell: cell, index: number) => void) {
@@ -228,24 +251,16 @@ export default class Tetris {
     }
   }
 
-  loop() {
-    setInterval(() => this.nextState(() => {
-      this.renderBoard();
-      this.fallShape();
-    }), 400);
-  }
-
-  fallShape() {
-    for (let i = 0; i < this.currentShape.length; i++) {
-      this.currentShape[i] = this.move('down', this.currentShape[i]);
+  renderCell(cell: Cell) {
+    if (!cell.cached) {
+      this.ctx.clearRect(cell.x, cell.y, SIZE, SIZE);
+      if (cell.fill) {
+        this.ctx.fillRect(cell.x, cell.y, SIZE, SIZE);
+      } else {
+        this.ctx.rect(cell.x, cell.y, SIZE, SIZE);
+      }
+      cell.cached = true;
     }
   }
-
-  renderBoard() {
-    this.iterBoard((cell, index) => {
-      this.drawCell(cell);
-    });
-
-    this.ctx.stroke();
-  }
 }
+
