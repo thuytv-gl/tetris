@@ -8,15 +8,11 @@ const SIZE = CELL - PAD * 2;
 /*
   The board
   ---------------------------------------
-  -40 -39 -38 -37 -36 -35 -34 -33 -32 -31 
-  -30 -29 -28 -27 -26 -25 -24 -23 -22 -21 
-  -20 -19 -18 -17 -16 -15 -14 -13 -12 -11 
-  -10 -9  -8  -7  -6  -5  -4  -3  -2  -1  
-  0   1   2   3   4   5   6   7   8   9   
-  10  11  12  13  14  15  16  17  18  19  
-  20  21  22  23  24  25  26  27  28  29  
-  30  31  32  33  34  35  36  37  38  39  
-  40  41  42  43  44  45  46  47  48  49  
+  0   1   2   3   4   5   6   7   8   9  >> advanced area
+  10  11  12  13  14  15  16  17  18  19 >> will not
+  20  21  22  23  24  25  26  27  28  29 >> be draw
+  30  31  32  33  34  35  36  37  38  39 >> on screen
+  40  41  42  43  44  45  46  47  48  49 >> start drawing from here
   50  51  52  53  54  55  56  57  58  59  
   60  61  62  63  64  65  66  67  68  69  
   70  71  72  73  74  75  76  77  78  79  
@@ -42,7 +38,6 @@ const R_Z_SHAPE = [-7, -6, 4, 5];
 const T_SHAPE = [-6, 3, 4, 5];
 const L_SHAPE = [-5, 3, 4, 5];
 const R_L_SHAPE = [-7, 3, 4, 5];
-const HEAD_POSISION = 3;
 const shapes = [
   I_SHAPE,
   Z_SHAPE,
@@ -58,10 +53,11 @@ function randomShape() {
 }
 
 export default class Tetris {
-  private board: Cell[][] = [];
-  private md = Math.round(Math.random() * 10);
+  private board: Cell[] = [];
   private blen = 0; // board len
-  private shape: number[] = randomShape();
+  private shape: number[] = I_SHAPE;
+  private width = 10;
+  private height = 20;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -71,11 +67,8 @@ export default class Tetris {
     this.ctx.strokeStyle = 'green';
     this.ctx.fillStyle = 'green';
 
-    const rows = this.canvas.height / CELL;
-    const cols = this.canvas.width / CELL;
-
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
         this.board.push({
           x: x * CELL + PAD,
           y: y * CELL + PAD,
@@ -97,10 +90,12 @@ export default class Tetris {
 
   listenKeyboard() {
     window.addEventListener('keydown', (evt) => {
-      const key = this.keymap[evt.code] ?? evt.code;
-      const handler = this.keydownHandlers[key];
+      type KeymapKey = keyof typeof this.keymap;
+      type KeydownHandlerKey = keyof typeof this.keydownHandlers;
+      const key = this.keymap[evt.code as KeymapKey] ?? evt.code;
+      const handler = this.keydownHandlers[key as KeydownHandlerKey];
       if (typeof handler === 'function') {
-        handler(evt);
+        handler();
         this.renderBoard();
       }
     })
@@ -126,6 +121,15 @@ export default class Tetris {
     ArrowRight: () => {
       this.moveAside(1);
     },
+    ArrowUp: () => {
+      this.rotate();
+    },
+  }
+
+  setFillAll(indices: number[], fill: boolean) {
+    for (let i = 0; i < indices.length; i++) {
+      this.setFill(indices[i], fill);
+    }
   }
 
   setFill(index: number, fill: boolean) {
@@ -189,6 +193,39 @@ export default class Tetris {
 
     return !panic;
   }
+   
+  rotate() {
+    // Ref: https://en.wikipedia.org/wiki/Rotation_matrix
+    const origin = 2,
+    ox = this.shape[origin] % 10,
+    oy = (this.shape[origin] - ox) / 10;
+    let i = this.shape.length;
+    let shiftX = 0;
+    this.setFillAll(this.shape, false);
+    while(--i >= 0) {
+      const point = this.shape[i],
+      x = point % 10, // convert 1d point to 2d coordinate
+      y = (point - x) / 10,
+      dx = x - ox, // translate origin to "the origin" cell
+      dy = y - oy,
+      rx = -dy + ox, // rotate point (check Ref) and move back to base
+      ry = dx + oy;
+
+      if (rx < shiftX) {
+        shiftX = rx;
+      } else if (rx > 9) {
+        shiftX = rx - 9;
+      }
+
+      if (shiftX !== 0) {
+        console.log('[shiftX]', shiftX);
+      }
+
+      this.shape[i] = 10 * ry + rx; // convert 2d coordinate to 1d point
+    }
+    this.shape = this.shape.map(i => i - shiftX);
+    this.setFillAll(this.shape, true);
+  }
 
   bodyPart(id: number) {
     return this.shape.includes(id);
@@ -231,21 +268,21 @@ export default class Tetris {
   }
 
   loop() {
-    //setInterval(() => {
+    // setInterval(() => {
       this.renderBoard();
       this.moveDown();
-    //}, 100)
+    // }, 250)
   }
 
   renderBoard() {
-    this.iterBoard((cell, index) => {
+    this.iterBoard((cell) => {
       this.renderCell(cell);
     });
 
     this.ctx.stroke();
   }
 
-  iterBoard(callback: (cell: cell, index: number) => void) {
+  iterBoard(callback: (cell: Cell, index: number) => void) {
     for (let i = 0; i < this.board.length; i++) {
       callback(this.board[i], i);
     }

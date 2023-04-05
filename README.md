@@ -2,9 +2,8 @@
 - [x] render 10 x 20 board
 - [x] render shapes: Z, reverse Z, L, reverse L, I, T
 - [x] shape movement: left, right, down, drop
-- [ ] shape movement: flip
+- [x] shape movement: rotate
 - [ ] clear row and drop all remain cells
-- [ ] keep track and display score
 - [ ] keep track and display score
 
 ## Developing
