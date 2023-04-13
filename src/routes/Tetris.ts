@@ -1,72 +1,43 @@
-import type { Cell } from './Tetris.types';
-import { sameTens } from './Utils';
+import type { Cell, Shape, ShapeName, Point } from './Tetris.types';
+import { Direction } from './Tetris.types';
+import {
+  Shapes,
+  CenterRotation,
+  ClockwiseMatrix,
+  CounterClockwiseMatrix
+} from './Config';
+import { sameTens, getRandomShape, clone, dot, translate } from './Utils';
 
 const PAD = 4;
 const CELL = 40;
 const SIZE = CELL - PAD * 2;
 
-/*
-  The board
-  ---------------------------------------
-  0   1   2   3   4   5   6   7   8   9  >> advanced area
-  10  11  12  13  14  15  16  17  18  19 >> will not
-  20  21  22  23  24  25  26  27  28  29 >> be draw
-  30  31  32  33  34  35  36  37  38  39 >> on screen
-  40  41  42  43  44  45  46  47  48  49 >> start drawing from here
-  50  51  52  53  54  55  56  57  58  59  
-  60  61  62  63  64  65  66  67  68  69  
-  70  71  72  73  74  75  76  77  78  79  
-  80  81  82  83  84  85  86  87  88  89  
-  90  91  92  93  94  95  96  97  98  99  
-  100 101 102 103 104 105 106 107 108 109 
-  110 111 112 113 114 115 116 117 118 119 
-  120 121 122 123 124 125 126 127 128 129 
-  130 131 132 133 134 135 136 137 138 139 
-  140 141 142 143 144 145 146 147 148 149 
-  150 151 152 153 154 155 156 157 158 159 
-  160 161 162 163 164 165 166 167 168 169 
-  170 171 172 173 174 175 176 177 178 179 
-  180 181 182 183 184 185 186 187 188 189 
-  190 191 192 193 194 195 196 197 198 199 
- */
-
-// TODO: move all shapes up one row
-// to prevent shape stack on other shapes
-const I_SHAPE = [-26, -16, -6, 4];
-const Z_SHAPE = [-6, -5, 3, 4];
-const R_Z_SHAPE = [-7, -6, 4, 5];
-const T_SHAPE = [-6, 3, 4, 5];
-const L_SHAPE = [-5, 3, 4, 5];
-const R_L_SHAPE = [-7, 3, 4, 5];
-const shapes = [
-  I_SHAPE,
-  Z_SHAPE,
-  R_Z_SHAPE,
-  T_SHAPE,
-  L_SHAPE,
-  R_L_SHAPE,
-];
-
-function randomShape() {
-  const luckyNumber = Math.floor(Math.random() * shapes.length);
-  return [...shapes[luckyNumber]];
-}
-
 export default class Tetris {
   private board: Cell[] = [];
-  private blen = 0; // board len
-  private shape: number[] = I_SHAPE;
+  private shapeName: ShapeName = getRandomShape();
+  private shapeData: Shape = clone(Shapes[this.shapeName]);
   private width = 10;
   private height = 20;
+  private boardLen = this.width * this.height - 1;
 
   constructor(
-    private canvas: HTMLCanvasElement,
+    private _canvas: HTMLCanvasElement,
     private ctx: CanvasRenderingContext2D,
   ) {
-    this.beforeSetup();
     this.ctx.strokeStyle = 'green';
     this.ctx.fillStyle = 'green';
+    this.makeBoard();
+    this.listenKeyboard();
+    this.setFillBulk(this.shapeData, true);
+    this.loop();
+  }
 
+  populateRandomShape() {
+    this.shapeName = getRandomShape();
+    this.shapeData = clone(Shapes[this.shapeName]);
+  }
+
+  makeBoard() {
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
         this.board.push({
@@ -78,15 +49,7 @@ export default class Tetris {
       }
     }
 
-    this.blen = this.board.length - 1;
-
-    this.listenKeyboard();
-    this.afterSetup();
-    this.loop();
   }
-
-  beforeSetup(){};
-  afterSetup(){};
 
   listenKeyboard() {
     window.addEventListener('keydown', (evt) => {
@@ -110,23 +73,25 @@ export default class Tetris {
 
   keydownHandlers = {
     Space: () => {
+      /** drop */
       while(this.moveDown());
     },
     ArrowDown: () => {
       this.moveDown();
     },
     ArrowLeft: () => {
-      this.moveAside(-1);
+      this.moveAside(Direction.LEFT);
     },
     ArrowRight: () => {
-      this.moveAside(1);
+      this.moveAside(Direction.RIGHT);
     },
     ArrowUp: () => {
-      this.rotate();
+      const matrix = Math.random() > 0.5 ? ClockwiseMatrix : CounterClockwiseMatrix;
+      this.rotate(matrix);
     },
   }
 
-  setFillAll(indices: number[], fill: boolean) {
+  setFillBulk(indices: number[], fill: boolean) {
     for (let i = 0; i < indices.length; i++) {
       this.setFill(indices[i], fill);
     }
@@ -141,97 +106,103 @@ export default class Tetris {
   }
 
   moveDown() {
-    let i = this.shape.length;
+    let i = this.shapeData.length;
     let updated = 0;
-    let prev = [...this.shape];
+    const prev = clone(this.shapeData);
 
-    this.shape.forEach(id => this.setFill(id, false));
+    this.shapeData.forEach(id => this.setFill(id, false));
     while (--i >= 0) {
-      const id = this.shape[i];
-      const next = id + 10;
+      const id = this.shapeData[i];
+      const next = id + this.width;
 
-      if (sameTens(id, this.blen) || this.filled(next)) {
+      if (sameTens(id, this.boardLen) || this.filled(next)) {
         break;
       }
 
-      this.shape[i] = next;
+      this.shapeData[i] = next;
       updated++;
     }
 
-    const panic = updated !== this.shape.length;
-    const toFill = panic ? prev : [...this.shape];
-    panic && (this.shape = randomShape())
+    const panic = updated !== this.shapeData.length;
+    const toFill = panic ? prev : this.shapeData;
+    panic && (this.populateRandomShape());
 
     toFill.forEach((id) => this.setFill(id, true));
 
     return !panic;
   }
 
-  moveAside(direction: 1 | -1) {
-    let i = this.shape.length;
+  moveAside(direction: Direction) {
+    let i = this.shapeData.length;
     let updated = 0;
-    let prev = [...this.shape];
+    let prev = clone(this.shapeData);
 
-    this.shape.forEach(id => this.setFill(id, false));
+    this.shapeData.forEach(id => this.setFill(id, false));
     while (--i >= 0) {
-      const id = this.shape[i];
+      const id = this.shapeData[i];
       const next = id + 1 * direction;
 
       if (!sameTens(id, next) || this.filled(next)) {
         break;
       }
 
-      this.shape[i] = next;
+      this.shapeData[i] = next;
       updated++;
     }
 
-    const panic = updated !== this.shape.length;
-    const toFill = panic ? prev : [...this.shape];
+    const panic = updated !== this.shapeData.length;
+    const toFill = panic ? prev : this.shapeData;
 
-    panic && (this.shape = prev)
+    panic && (this.shapeData = prev);
     toFill.forEach((id) => this.setFill(id, true));
 
     return !panic;
   }
-   
-  rotate() {
-    // Ref: https://en.wikipedia.org/wiki/Rotation_matrix
-    const origin = 2,
-    ox = this.shape[origin] % 10,
-    oy = (this.shape[origin] - ox) / 10;
-    let i = this.shape.length;
-    let shiftX = 0;
-    this.setFillAll(this.shape, false);
+
+  to2dCordinate(point: number): Point {
+    return [
+      /* x */point % this.width,
+      /* y */Math.floor(point / this.width)
+    ];
+  }
+
+  to1dPoint(point: Point) {
+    return this.width * point[1] + point[0];
+  }
+
+  rotate(matrix: number[][]) {
+    // Ref:https://en.wikipedia.org/wiki/Rotation_matrix#In_two_dimensions 
+    const origin = this.to2dCordinate(this.shapeData[CenterRotation]);
+    let i = this.shapeData.length, panic = false;
+    const prev = clone(this.shapeData);
+    this.setFillBulk(this.shapeData, false);
     while(--i >= 0) {
-      const point = this.shape[i],
-      x = point % 10, // convert 1d point to 2d coordinate
-      y = (point - x) / 10,
-      dx = x - ox, // translate origin to "the origin" cell
-      dy = y - oy,
-      rx = -dy + ox, // rotate point (check Ref) and move back to base
-      ry = dx + oy;
+      let point = this.to2dCordinate(this.shapeData[i]);
+      point = translate(point, origin);
+      const rotated = [
+        dot(matrix[0], point as number[]),
+        dot(matrix[1], point as number[])
+      ] as Point;
 
-      if (rx < shiftX) {
-        shiftX = rx;
-      } else if (rx > 9) {
-        shiftX = rx - 9;
+      const translated = translate(rotated, origin, -1);
+
+      const touchedSideWall = translated[0] < 0 || translated[0] > this.width - 1;
+      if (touchedSideWall) {
+        panic = true; break;
       }
 
-      if (shiftX !== 0) {
-        console.log('[shiftX]', shiftX);
+      const next = this.to1dPoint(translated);
+      if (this.filled(next)) {
+        panic = true; break;
       }
 
-      this.shape[i] = 10 * ry + rx; // convert 2d coordinate to 1d point
+      this.shapeData[i] = next;
     }
-    this.shape = this.shape.map(i => i - shiftX);
-    this.setFillAll(this.shape, true);
-  }
 
-  bodyPart(id: number) {
-    return this.shape.includes(id);
-  }
-
-  drop() {
+    if (panic) {
+      this.shapeData = prev as Shape;
+    }
+    this.setFillBulk(this.shapeData, true);
   }
 
   filled(index: number) {
@@ -275,17 +246,11 @@ export default class Tetris {
   }
 
   renderBoard() {
-    this.iterBoard((cell) => {
-      this.renderCell(cell);
-    });
-
-    this.ctx.stroke();
-  }
-
-  iterBoard(callback: (cell: Cell, index: number) => void) {
-    for (let i = 0; i < this.board.length; i++) {
-      callback(this.board[i], i);
+    let i = this.board.length;
+    while(--i >= 0) {
+      this.renderCell(this.board[i]);
     }
+    this.ctx.stroke();
   }
 
   renderCell(cell: Cell) {
