@@ -26,7 +26,7 @@ import type { ShapeName, ImmuteShape } from './Tetris.types';
  */
 export const Shapes: Record<ShapeName, ImmuteShape> = {
   'I_SHAPE': [3, 4, 5, 6] as const,
-  'Z_SHAPE': [4, 5, 13, 14] as const,
+  'Z_SHAPE': [5, 4, 14, 13] as const,
   'R_Z_SHAPE': [3, 4, 14, 15] as const,
   'T_SHAPE': [3, 4, 5, 14] as const,
   'L_SHAPE': [3, 4, 5, 13] as const,

@@ -1,268 +1,319 @@
 import type { Cell, Shape, ShapeName, Point } from './Tetris.types';
 import { Direction } from './Tetris.types';
 import {
-  Shapes,
-  CenterRotation,
-  ClockwiseMatrix,
-  CounterClockwiseMatrix
+    Shapes,
+    CenterRotation,
+    ClockwiseMatrix,
 } from './Config';
-import { sameTens, getRandomShape, clone, dot, translate } from './Utils';
+import { isOnSameLine, getRandomShape, clone, dot, translate } from './Utils';
 
 const PAD = 4;
 const CELL = 40;
 const SIZE = CELL - PAD * 2;
 
 export default class Tetris {
-  private board: Cell[] = [];
-  private shapeName: ShapeName = getRandomShape();
-  private shapeData: Shape = clone(Shapes[this.shapeName]);
-  private width = 10;
-  private height = 20;
-  private boardLen = this.width * this.height - 1;
+    private board: Cell[] = [];
+    private shapeName: ShapeName = getRandomShape();
+    private shapeData: Shape = clone(Shapes[this.shapeName]);
+    private lastShapeData: Shape  | null = null;
+    private width = 10;
+    private height = 20;
+    private boardLen = this.width * this.height - 1;
 
-  constructor(
-    private _canvas: HTMLCanvasElement,
-    private ctx: CanvasRenderingContext2D,
-  ) {
-    this.ctx.strokeStyle = 'green';
-    this.ctx.fillStyle = 'green';
-    this.makeBoard();
-    this.listenKeyboard();
-    this.setFillBulk(this.shapeData, true);
-    this.loop();
-  }
-
-  populateRandomShape() {
-    this.shapeName = getRandomShape();
-    this.shapeData = clone(Shapes[this.shapeName]);
-  }
-
-  makeBoard() {
-    for (let y = 0; y < this.height; y++) {
-      for (let x = 0; x < this.width; x++) {
-        this.board.push({
-          x: x * CELL + PAD,
-          y: y * CELL + PAD,
-          fill: false,
-          cached: false,
-        });
-      }
+    constructor(
+        private _canvas: HTMLCanvasElement,
+        private ctx: CanvasRenderingContext2D,
+    ) {
+        this.ctx.strokeStyle = 'green';
+        this.ctx.fillStyle = 'green';
+        this.makeBoard();
+        this.listenKeyboard();
+        this.setFillBulk(this.shapeData, true);
+        this.loop();
     }
 
-  }
+    setShapeData(next: Shape) {
+        this.lastShapeData = clone(this.shapeData);
+        this.shapeData = next;
+    }
 
-  listenKeyboard() {
-    window.addEventListener('keydown', (evt) => {
-      type KeymapKey = keyof typeof this.keymap;
-      type KeydownHandlerKey = keyof typeof this.keydownHandlers;
-      const key = this.keymap[evt.code as KeymapKey] ?? evt.code;
-      const handler = this.keydownHandlers[key as KeydownHandlerKey];
-      if (typeof handler === 'function') {
-        handler();
+    populateRandomShape() {
+        this.shapeName = getRandomShape();
+        this.setShapeData(clone(Shapes[this.shapeName]))
         this.renderBoard();
-      }
-    })
-  }
-
-  keymap = {
-    KeyJ: 'ArrowDown',
-    KeyK: 'ArrowUp',
-    KeyH: 'ArrowLeft',
-    KeyL: 'ArrowRight',
-  }
-
-  keydownHandlers = {
-    Space: () => {
-      /** drop */
-      while(this.moveDown());
-    },
-    ArrowDown: () => {
-      this.moveDown();
-    },
-    ArrowLeft: () => {
-      this.moveAside(Direction.LEFT);
-    },
-    ArrowRight: () => {
-      this.moveAside(Direction.RIGHT);
-    },
-    ArrowUp: () => {
-      const matrix = Math.random() > 0.5 ? ClockwiseMatrix : CounterClockwiseMatrix;
-      this.rotate(matrix);
-    },
-  }
-
-  setFillBulk(indices: number[], fill: boolean) {
-    for (let i = 0; i < indices.length; i++) {
-      this.setFill(indices[i], fill);
-    }
-  }
-
-  setFill(index: number, fill: boolean) {
-    const item = this.board[index];
-    if (item && item.fill !== fill) {
-      item.fill = fill;
-      item.cached = false;
-    }
-  }
-
-  moveDown() {
-    let i = this.shapeData.length;
-    let updated = 0;
-    const prev = clone(this.shapeData);
-
-    this.shapeData.forEach(id => this.setFill(id, false));
-    while (--i >= 0) {
-      const id = this.shapeData[i];
-      const next = id + this.width;
-
-      if (sameTens(id, this.boardLen) || this.filled(next)) {
-        break;
-      }
-
-      this.shapeData[i] = next;
-      updated++;
     }
 
-    const panic = updated !== this.shapeData.length;
-    const toFill = panic ? prev : this.shapeData;
-    panic && (this.populateRandomShape());
+    makeBoard() {
+        for (let y = 0; y < this.height; y++) {
+            for (let x = 0; x < this.width; x++) {
+                this.board.push({
+                    x: x * CELL + PAD,
+                    y: y * CELL + PAD,
+                    fill: false,
+                    cached: false,
+                });
+            }
+        }
 
-    toFill.forEach((id) => this.setFill(id, true));
-
-    return !panic;
-  }
-
-  moveAside(direction: Direction) {
-    let i = this.shapeData.length;
-    let updated = 0;
-    let prev = clone(this.shapeData);
-
-    this.shapeData.forEach(id => this.setFill(id, false));
-    while (--i >= 0) {
-      const id = this.shapeData[i];
-      const next = id + 1 * direction;
-
-      if (!sameTens(id, next) || this.filled(next)) {
-        break;
-      }
-
-      this.shapeData[i] = next;
-      updated++;
     }
 
-    const panic = updated !== this.shapeData.length;
-    const toFill = panic ? prev : this.shapeData;
-
-    panic && (this.shapeData = prev);
-    toFill.forEach((id) => this.setFill(id, true));
-
-    return !panic;
-  }
-
-  to2dCordinate(point: number): Point {
-    return [
-      /* x */point % this.width,
-      /* y */Math.floor(point / this.width)
-    ];
-  }
-
-  to1dPoint(point: Point) {
-    return this.width * point[1] + point[0];
-  }
-
-  rotate(matrix: number[][]) {
-    // Ref:https://en.wikipedia.org/wiki/Rotation_matrix#In_two_dimensions 
-    const origin = this.to2dCordinate(this.shapeData[CenterRotation]);
-    let i = this.shapeData.length, panic = false;
-    const prev = clone(this.shapeData);
-    this.setFillBulk(this.shapeData, false);
-    while(--i >= 0) {
-      let point = this.to2dCordinate(this.shapeData[i]);
-      point = translate(point, origin);
-      const rotated = [
-        dot(matrix[0], point as number[]),
-        dot(matrix[1], point as number[])
-      ] as Point;
-
-      const translated = translate(rotated, origin, -1);
-
-      const touchedSideWall = translated[0] < 0 || translated[0] > this.width - 1;
-      if (touchedSideWall) {
-        panic = true; break;
-      }
-
-      const next = this.to1dPoint(translated);
-      if (this.filled(next)) {
-        panic = true; break;
-      }
-
-      this.shapeData[i] = next;
+    listenKeyboard() {
+        window.addEventListener('keydown', (evt) => {
+            type KeymapKey = keyof typeof this.keymap;
+            type KeydownHandlerKey = keyof typeof this.keydownHandlers;
+            const key = this.keymap[evt.code as KeymapKey] ?? evt.code;
+            const handler = this.keydownHandlers[key as KeydownHandlerKey];
+            if (typeof handler === 'function') {
+                handler();
+                this.renderBoard();
+            }
+        })
     }
 
-    if (panic) {
-      this.shapeData = prev as Shape;
-    }
-    this.setFillBulk(this.shapeData, true);
-  }
-
-  filled(index: number) {
-    return !!this.board[index] && this.board[index].fill === true;
-  }
-
-  shouldClearRow(index: number) {
-    if (index < 0) {
-      return false;
+    keymap = {
+        KeyJ: 'ArrowDown',
+        KeyK: 'ArrowUp',
+        KeyH: 'ArrowLeft',
+        KeyL: 'ArrowRight',
     }
 
-    let fillCount = 0;
-    let i = Math.floor(index/10) * 10;
-    let max = i + 10;
-    while (i < max) {
-      this.board[i].fill && (fillCount++);
-      i++;
+    keydownHandlers = {
+        Space: () => {
+            /** drop */
+            while(this.moveDown());
+        },
+        ArrowDown: () => {
+            this.moveDown();
+        },
+        ArrowLeft: () => {
+            this.moveAside(Direction.LEFT);
+        },
+        ArrowRight: () => {
+            this.moveAside(Direction.RIGHT);
+        },
+        ArrowUp: () => {
+            // O shape doesn't rotate
+            if (this.shapeName === "O_SHAPE") {
+                return;
+            }
+            this.rotate(ClockwiseMatrix);
+        },
     }
 
-    return fillCount === 10;
-  }
-
-  clearRow(index: number) {
-    if (index < 0) {
-      return;
+    setFillBulk(indexes: number[], fill: boolean) {
+        for (let i = 0; i < indexes.length; i++) {
+            this.setFill(indexes[i], fill);
+        }
     }
 
-    let i = Math.floor(index/10) * 10;
-    let max = i + 10;
-    while (i < max) {
-      this.setFill(i, false);
-      i++;
+    setFill(index: number, fill: boolean) {
+        const item = this.board[index];
+        if (item && item.fill !== fill) {
+            item.fill = fill;
+            item.cached = false;
+        }
     }
-  }
 
-  loop() {
-    // setInterval(() => {
-      this.renderBoard();
-      this.moveDown();
-    // }, 250)
-  }
+    moveDown() {
+        let i = this.shapeData.length;
+        let updated = 0;
+        const prev = clone(this.shapeData);
 
-  renderBoard() {
-    let i = this.board.length;
-    while(--i >= 0) {
-      this.renderCell(this.board[i]);
+        this.shapeData.forEach(id => this.setFill(id, false));
+        while (--i >= 0) {
+            const id = this.shapeData[i];
+            const next = id + this.width;
+
+            if (isOnSameLine(id, this.boardLen) || this.filled(next)) {
+                break;
+            }
+
+            this.shapeData[i] = next;
+            updated++;
+        }
+
+        const panic = updated !== this.shapeData.length;
+        const toFill = panic ? prev : this.shapeData;
+        panic && (this.populateRandomShape());
+
+        toFill.forEach((id) => this.setFill(id, true));
+
+        return !panic;
     }
-    this.ctx.stroke();
-  }
 
-  renderCell(cell: Cell) {
-    if (!cell.cached) {
-      this.ctx.clearRect(cell.x, cell.y, SIZE, SIZE);
-      if (cell.fill) {
-        this.ctx.fillRect(cell.x, cell.y, SIZE, SIZE);
-      } else {
-        this.ctx.rect(cell.x, cell.y, SIZE, SIZE);
-      }
-      cell.cached = true;
+    moveAside(direction: Direction) {
+        let i = this.shapeData.length;
+        let updated = 0;
+        let prev = clone(this.shapeData);
+
+        this.shapeData.forEach(id => this.setFill(id, false));
+        while (--i >= 0) {
+            const id = this.shapeData[i];
+            const next = id + 1 * direction;
+
+            if (!isOnSameLine(id, next) || this.filled(next)) {
+                break;
+            }
+
+            this.shapeData[i] = next;
+            updated++;
+        }
+
+        const panic = updated !== this.shapeData.length;
+        const toFill = panic ? prev : this.shapeData;
+
+        panic && (this.setShapeData(prev));
+        toFill.forEach((id) => this.setFill(id, true));
+
+        return !panic;
     }
-  }
+
+    to2dCordinate(point: number): Point {
+        return [
+            /* x */point % this.width,
+            /* y */Math.floor(point / this.width)
+        ];
+    }
+
+    to1dPoint(point: Point) {
+        return this.width * point[1] + point[0];
+    }
+
+    isOutOfBound(point: Point): boolean {
+        return point[0] < 0 || point[0] > this.width - 1 || point[1] < 0;
+    }
+
+    rotate(matrix: number[][]) {
+        // Ref:https://en.wikipedia.org/wiki/Rotation_matrix#In_two_dimensions 
+        const origin = this.to2dCordinate(this.shapeData[CenterRotation]);
+        let i = this.shapeData.length, panic = false;
+        const prev = clone(this.shapeData);
+        this.setFillBulk(this.shapeData, false);
+        while(--i >= 0) {
+            let point = this.to2dCordinate(this.shapeData[i]);
+            point = translate(point, origin);
+            const rotated = [
+                dot(matrix[0], point as number[]),
+                dot(matrix[1], point as number[])
+            ] as Point;
+
+            const translated = translate(rotated, origin, -1);
+            if (this.isOutOfBound(translated)) {
+                panic = true; break;
+            }
+            const next = this.to1dPoint(translated);
+            if (this.filled(next)) {
+                panic = true; break;
+            }
+
+            this.shapeData[i] = next;
+        }
+
+        if (panic) {
+            this.setShapeData(prev);
+        }
+        this.setFillBulk(this.shapeData, true);
+    }
+
+    filled(index: number) {
+        return !!this.board[index] && this.board[index].fill === true;
+    }
+
+    shouldClearRow(index: number) {
+        if (index < 0) {
+            return false;
+        }
+
+        let shouldClear = true;
+
+        let i = Math.floor(index/10) * 10;
+        let max = i + 10;
+        while (i < max) {
+            if (!this.filled(i)) {
+                shouldClear = false;
+                break;
+            }
+            i++;
+        }
+
+        return shouldClear;
+    }
+
+    clearRow(index: number) {
+        if (index < 0) {
+            return;
+        }
+
+        let i = Math.floor(index/10) * 10;
+        let max = i + 10;
+        while (i < max) {
+            this.setFill(i, false);
+            i++;
+        }
+    }
+
+    shiftRowDown(index: number) {
+        let i = Math.floor(index/10) * 10;
+        let max = i + 10;
+        let hasFilledCell = false;
+        while (i < max) {
+            if (!hasFilledCell && this.filled(i)) {
+                hasFilledCell = true;
+            }
+
+            this.setFill(i, this.filled(i-10));
+            i++;
+        }
+
+        return hasFilledCell;
+    }
+
+    checkAndClearBoard() {
+        if (!this.lastShapeData) {
+            return;
+        }
+
+        let clread = false;
+        // TODO: performance can be improve here
+        // check for continues rows and clear at once
+        // then shift rows above accordingly
+        this.lastShapeData.forEach(item => {
+            if (this.shouldClearRow(item)) {
+                this.clearRow(item);
+                // this.shiftRowDown(item--);
+                clread = true;
+            }
+        });
+        return clread;
+    }
+
+    loop() {
+        this.renderBoard();
+        this.moveDown();
+        if (this.checkAndClearBoard()) {
+            this.renderBoard();
+        }
+        // setTimeout(() => this.loop(), 300);
+    }
+
+    renderBoard() {
+        let i = this.board.length;
+        while(--i >= 0) {
+            this.renderCell(this.board[i]);
+        }
+        this.ctx.stroke();
+    }
+
+    renderCell(cell: Cell) {
+        if (!cell.cached) {
+            this.ctx.clearRect(cell.x, cell.y, SIZE, SIZE);
+            if (cell.fill) {
+                this.ctx.fillRect(cell.x, cell.y, SIZE, SIZE);
+            } else {
+                this.ctx.rect(cell.x, cell.y, SIZE, SIZE);
+            }
+            cell.cached = true;
+        }
+    }
 }
 

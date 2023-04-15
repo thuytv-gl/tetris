@@ -7,7 +7,7 @@ import { ShapeNames } from './Config';
   * n2 tens = 23
   * => result false
   */
-export const sameTens = (n1: number, n2: number) => {
+export const isOnSameLine = (n1: number, n2: number) => {
   return Math.floor(n1/10) === Math.floor(n2/10);
 }
 
@@ -17,7 +17,7 @@ export function getRandomShape(): ShapeName {
   return ShapeNames[luckyShape];
 }
 
-export function clone(shape: Shape | ImmuteShape): Shape {
+export function clone(shape: Shape | ImmuteShape | number[]): Shape {
   return shape.slice() as Shape;
 }
 
