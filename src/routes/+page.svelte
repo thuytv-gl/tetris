@@ -24,17 +24,29 @@ onMount(()=> {
 
 </script>
 
-<div>
-  <img
+
+<div style="flex-direction: column; position: absolute; top: 0; left: 10px; font-size: 15px">
+<pre>
+    left    :   l
+    right   :   h
+    rotate  :   k
+    down    :   j
+    drop    :   space
+</pre>
+    <h4>Last State</h4>
+    <img
         width="200"
         height="400"
         bind:this={lgt}
-  />
-  <canvas
+    />
+</div>
+
+<div>
+    <canvas
         width="400"
         height="800"
         bind:this={canvas}>
-  </canvas>
+    </canvas>
 </div>
 
 <style>

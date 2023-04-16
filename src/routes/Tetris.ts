@@ -94,7 +94,7 @@ export default class Tetris {
     gameloop() {
         this.render();
         this.moveDown();
-        // setTimeout(() => this.loop(), 300);
+        setTimeout(() => this.gameloop(), 300);
     }
 
 
