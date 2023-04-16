@@ -15,35 +15,25 @@ export default class Tetris {
     private board: Cell[] = [];
     private shapeName: ShapeName = getRandomShape();
     private shapeData: Shape = clone(Shapes[this.shapeName]);
-    private lastShapeData: Shape  | null = null;
     private width = 10;
     private height = 20;
     private boardLen = this.width * this.height - 1;
+    beforeClear(){}
+    afterClear(){}
 
     constructor(
         private _canvas: HTMLCanvasElement,
         private ctx: CanvasRenderingContext2D,
     ) {
+        this.init();
+        this.listenKeyboard();
+        this.gameloop();
+    }
+
+    init() {
         this.ctx.strokeStyle = 'green';
         this.ctx.fillStyle = 'green';
-        this.makeBoard();
-        this.listenKeyboard();
-        this.setFillBulk(this.shapeData, true);
-        this.loop();
-    }
 
-    setShapeData(next: Shape) {
-        this.lastShapeData = clone(this.shapeData);
-        this.shapeData = next;
-    }
-
-    populateRandomShape() {
-        this.shapeName = getRandomShape();
-        this.setShapeData(clone(Shapes[this.shapeName]))
-        this.renderBoard();
-    }
-
-    makeBoard() {
         for (let y = 0; y < this.height; y++) {
             for (let x = 0; x < this.width; x++) {
                 this.board.push({
@@ -55,8 +45,9 @@ export default class Tetris {
             }
         }
 
+        this.setFillBulk(this.shapeData, true);
     }
-
+    
     listenKeyboard() {
         window.addEventListener('keydown', (evt) => {
             type KeymapKey = keyof typeof this.keymap;
@@ -65,9 +56,9 @@ export default class Tetris {
             const handler = this.keydownHandlers[key as KeydownHandlerKey];
             if (typeof handler === 'function') {
                 handler();
-                this.renderBoard();
+                this.render();
             }
-        })
+        });
     }
 
     keymap = {
@@ -100,6 +91,25 @@ export default class Tetris {
         },
     }
 
+    gameloop() {
+        this.render();
+        this.moveDown();
+        // setTimeout(() => this.loop(), 300);
+    }
+
+
+    setShapeData(next: Shape) {
+        this.shapeData = next;
+    }
+
+    populateNextShape() {
+        this.clearFulfilledRows();
+        this.shapeName = getRandomShape();
+        this.setShapeData(clone(Shapes[this.shapeName]))
+        this.setFillBulk(this.shapeData, true);
+        this.render();
+    }
+
     setFillBulk(indexes: number[], fill: boolean) {
         for (let i = 0; i < indexes.length; i++) {
             this.setFill(indexes[i], fill);
@@ -119,7 +129,7 @@ export default class Tetris {
         let updated = 0;
         const prev = clone(this.shapeData);
 
-        this.shapeData.forEach(id => this.setFill(id, false));
+        this.setFillBulk(this.shapeData, false);
         while (--i >= 0) {
             const id = this.shapeData[i];
             const next = id + this.width;
@@ -134,9 +144,9 @@ export default class Tetris {
 
         const panic = updated !== this.shapeData.length;
         const toFill = panic ? prev : this.shapeData;
-        panic && (this.populateRandomShape());
 
-        toFill.forEach((id) => this.setFill(id, true));
+        this.setFillBulk(toFill, true);
+        panic && (this.populateNextShape());
 
         return !panic;
     }
@@ -146,7 +156,7 @@ export default class Tetris {
         let updated = 0;
         let prev = clone(this.shapeData);
 
-        this.shapeData.forEach(id => this.setFill(id, false));
+        this.setFillBulk(this.shapeData, false);
         while (--i >= 0) {
             const id = this.shapeData[i];
             const next = id + 1 * direction;
@@ -160,10 +170,12 @@ export default class Tetris {
         }
 
         const panic = updated !== this.shapeData.length;
-        const toFill = panic ? prev : this.shapeData;
 
-        panic && (this.setShapeData(prev));
-        toFill.forEach((id) => this.setFill(id, true));
+        if (panic) {
+            this.setShapeData(prev);
+        }
+
+        this.setFillBulk(this.shapeData, true);
 
         return !panic;
     }
@@ -227,7 +239,7 @@ export default class Tetris {
         let shouldClear = true;
 
         let i = Math.floor(index/10) * 10;
-        let max = i + 10;
+        const max = i + this.width;
         while (i < max) {
             if (!this.filled(i)) {
                 shouldClear = false;
@@ -239,7 +251,8 @@ export default class Tetris {
         return shouldClear;
     }
 
-    clearRow(index: number) {
+    dropUpperRows(index: number) {
+        this.beforeClear();
         if (index < 0) {
             return;
         }
@@ -247,56 +260,36 @@ export default class Tetris {
         let i = Math.floor(index/10) * 10;
         let max = i + 10;
         while (i < max) {
-            this.setFill(i, false);
-            i++;
-        }
-    }
-
-    shiftRowDown(index: number) {
-        let i = Math.floor(index/10) * 10;
-        let max = i + 10;
-        let hasFilledCell = false;
-        while (i < max) {
-            if (!hasFilledCell && this.filled(i)) {
-                hasFilledCell = true;
-            }
-
             this.setFill(i, this.filled(i-10));
             i++;
         }
 
-        return hasFilledCell;
+        this.afterClear();
     }
 
-    checkAndClearBoard() {
-        if (!this.lastShapeData) {
-            return;
+    clearGaps(index: number) {
+        let i = Math.floor(index/10) * 10;
+        let max = i + 10;
+        while (i < max) {
+            this.setFill(i, this.filled(i-10));
+            i++;
         }
+    }
 
-        let clread = false;
-        // TODO: performance can be improve here
-        // check for continues rows and clear at once
-        // then shift rows above accordingly
-        this.lastShapeData.forEach(item => {
-            if (this.shouldClearRow(item)) {
-                this.clearRow(item);
-                // this.shiftRowDown(item--);
-                clread = true;
+    clearFulfilledRows() {
+        let i = this.boardLen;
+        while(i >= 0) {
+            if (this.shouldClearRow(i)) {
+                for (let j = i; j >= 0; j -= 10) {
+                    this.dropUpperRows(j);
+                }
+            } else {
+                i -= 10;
             }
-        });
-        return clread;
-    }
-
-    loop() {
-        this.renderBoard();
-        this.moveDown();
-        if (this.checkAndClearBoard()) {
-            this.renderBoard();
         }
-        // setTimeout(() => this.loop(), 300);
     }
 
-    renderBoard() {
+    render() {
         let i = this.board.length;
         while(--i >= 0) {
             this.renderCell(this.board[i]);

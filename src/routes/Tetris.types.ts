@@ -10,10 +10,10 @@ export type ImmuteShape = Readonly<Shape>;
 
 export type ShapeName = 'I_SHAPE'
 | 'Z_SHAPE'
-| 'R_Z_SHAPE'
+| 'S_SHAPE'
 | 'T_SHAPE'
 | 'L_SHAPE'
-| 'R_L_SHAPE'
+| 'J_SHAPE'
 | 'O_SHAPE';
 
 export enum Direction {
