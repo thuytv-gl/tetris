@@ -7,7 +7,7 @@ import {
 } from './Config';
 import { isOnSameLine, getRandomShape, clone, dot, translate } from './Utils';
 
-const PAD = 4;
+const PAD = 1;
 const CELL = 40;
 const SIZE = CELL - PAD * 2;
 
@@ -31,9 +31,6 @@ export default class Tetris {
     }
 
     init() {
-        this.ctx.strokeStyle = 'green';
-        this.ctx.fillStyle = 'green';
-
         for (let y = 0; y < this.height; y++) {
             for (let x = 0; x < this.width; x++) {
                 this.board.push({
@@ -278,10 +275,16 @@ export default class Tetris {
 
     clearFulfilledRows() {
         let i = this.boardLen;
+        let clearCount = 0;
         while(i >= 0) {
             if (this.shouldClearRow(i)) {
+                clearCount++;
                 for (let j = i; j >= 0; j -= 10) {
                     this.dropUpperRows(j);
+                }
+                if (clearCount === 4) {
+                    // maxium number of rows that can be clear in one drop
+                    break;
                 }
             } else {
                 i -= 10;
@@ -294,17 +297,21 @@ export default class Tetris {
         while(--i >= 0) {
             this.renderCell(this.board[i]);
         }
-        this.ctx.stroke();
     }
 
     renderCell(cell: Cell) {
         if (!cell.cached) {
+            this.ctx.save();
             this.ctx.clearRect(cell.x, cell.y, SIZE, SIZE);
             if (cell.fill) {
+                this.ctx.fillStyle = '#0db300';
                 this.ctx.fillRect(cell.x, cell.y, SIZE, SIZE);
             } else {
-                this.ctx.rect(cell.x, cell.y, SIZE, SIZE);
+                this.ctx.fillStyle = '#000000';
+                this.ctx.fillRect(cell.x, cell.y, SIZE, SIZE);
             }
+            this.ctx.stroke();
+            this.ctx.restore();
             cell.cached = true;
         }
     }
